@@ -300,6 +300,27 @@ def test_case_completions_json(case_setup):
         writer.finished_ok = True
 
 
+def test_variables(case_setup):
+
+    with case_setup.test_file('_debugger_case_local_variables.py') as writer:
+        json_facade = JsonFacade(writer)
+
+        writer.write_set_protocol('http_json')
+        writer.write_add_breakpoint(writer.get_line_index_with_content('Break here'))
+
+        json_facade.write_make_initial_run()
+
+        hit = writer.wait_for_breakpoint_hit()
+        thread_id = hit.thread_id
+        frame_id = hit.frame_id
+
+        request = json_facade.write_request(pydevd_schema.ScopesRequest(
+            pydevd_schema.ScopesArguments((thread_id, frame_id))))
+
+        response = json_facade.wait_for_response(request)
+        print(response)
+
+
 if __name__ == '__main__':
     pytest.main(['-k', 'test_case_skipping_filters', '-s'])
 
