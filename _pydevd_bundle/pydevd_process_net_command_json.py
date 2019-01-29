@@ -5,7 +5,8 @@ import os
 import re
 
 from _pydevd_bundle._debug_adapter import pydevd_base_schema
-from _pydevd_bundle._debug_adapter.pydevd_schema import SourceBreakpoint, ScopesResponseBody
+from _pydevd_bundle._debug_adapter.pydevd_schema import SourceBreakpoint, ScopesResponseBody, Scope, \
+    VariablesResponseBody
 from _pydevd_bundle.pydevd_api import PyDevdAPI
 from _pydevd_bundle.pydevd_comm_constants import CMD_RETURN
 from _pydevd_bundle.pydevd_filtering import ExcludeFilter
@@ -276,12 +277,25 @@ class _PyDevJsonCommandProcessor(object):
         return NetCommand(CMD_RETURN, 0, set_breakpoints_response.to_dict(), is_json=True)
 
     def on_scopes_request(self, py_db, request):
-        thread_id, frame_id = request.frameId
+        frame_id = request.arguments.frameId
 
-        scopes = []
+        variables_reference = frame_id
+        scopes = [Scope('Locals', int(variables_reference), False).to_dict()]
         body = ScopesResponseBody(scopes)
         scopes_response = pydevd_base_schema.build_response(request, kwargs={'body':body})
         return NetCommand(CMD_RETURN, 0, scopes_response.to_dict(), is_json=True)
+
+    def on_variables_request(self, py_db, request):
+        '''
+        :param VariablesRequest request:
+        '''
+        arguments = request.arguments  # : :type arguments: VariablesArguments
+        variablesReference = arguments.variablesReference
+
+        variables = []
+        body = VariablesResponseBody(variables)
+        variables_response = pydevd_base_schema.build_response(request, kwargs={'body':body})
+        return NetCommand(CMD_RETURN, 0, variables_response.to_dict(), is_json=True)
 
 
 process_net_command_json = _PyDevJsonCommandProcessor(pydevd_base_schema.from_json).process_net_command_json

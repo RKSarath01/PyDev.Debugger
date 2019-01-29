@@ -314,11 +314,27 @@ def test_variables(case_setup):
         thread_id = hit.thread_id
         frame_id = hit.frame_id
 
-        request = json_facade.write_request(pydevd_schema.ScopesRequest(
-            pydevd_schema.ScopesArguments((thread_id, frame_id))))
+        scopes_request = json_facade.write_request(pydevd_schema.ScopesRequest(
+            pydevd_schema.ScopesArguments(frame_id)))
 
-        response = json_facade.wait_for_response(request)
-        print(response)
+        scopes_response = json_facade.wait_for_response(scopes_request)
+        scopes = scopes_response.body.scopes
+        assert len(scopes) == 1
+        scope = pydevd_schema.Scope(**next(iter(scopes)))
+        assert scope.name == 'Locals'
+        assert not scope.expensive
+        variables_reference = scope.variablesReference
+        assert isinstance(variables_reference, int)
+
+        variables_request = json_facade.write_request(
+            pydevd_schema.VariablesRequest(pydevd_schema.VariablesArguments(variables_reference)))
+        variables_response = json_facade.wait_for_response(variables_request)
+
+        print(variables_response.to_dict())
+
+        writer.write_run_thread(thread_id)
+
+        writer.finished_ok = True
 
 
 if __name__ == '__main__':
