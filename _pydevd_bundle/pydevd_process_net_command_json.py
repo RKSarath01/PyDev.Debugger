@@ -6,7 +6,7 @@ import re
 
 from _pydevd_bundle._debug_adapter import pydevd_base_schema
 from _pydevd_bundle._debug_adapter.pydevd_schema import SourceBreakpoint, ScopesResponseBody, Scope, \
-    VariablesResponseBody
+    VariablesResponseBody, StackTraceResponseBody
 from _pydevd_bundle.pydevd_api import PyDevdAPI
 from _pydevd_bundle.pydevd_comm_constants import CMD_RETURN
 from _pydevd_bundle.pydevd_filtering import ExcludeFilter
@@ -276,7 +276,23 @@ class _PyDevJsonCommandProcessor(object):
         set_breakpoints_response = pydevd_base_schema.build_response(request, kwargs={'body':body})
         return NetCommand(CMD_RETURN, 0, set_breakpoints_response.to_dict(), is_json=True)
 
+    def on_stacktrace_request(self, py_db, request):
+        '''
+        :param StackTraceRequest request:
+        '''
+        # : :type stack_trace_arguments: StackTraceArguments
+        stack_trace_arguments = request.arguments
+        thread_id = stack_trace_arguments.threadId
+
+        self.api.request_stack(py_db, request.seq, thread_id)
+
     def on_scopes_request(self, py_db, request):
+        '''
+        Scopes are the top-level items which appear for a frame (so, we receive the frame id
+        and provide the scopes it has).
+
+        :param ScopesRequest request:
+        '''
         frame_id = request.arguments.frameId
 
         variables_reference = frame_id
@@ -287,6 +303,17 @@ class _PyDevJsonCommandProcessor(object):
 
     def on_variables_request(self, py_db, request):
         '''
+        Variables can be asked whenever some place returned a variables reference (so, it
+        can be a scope gotten from on_scopes_request, the result of some evaluation, etc.).
+
+        Note that in the DAP the variables reference requires a unique int... the way this works for
+        pydevd is that an instance is generated for that specific variable reference and we use its
+        id(instance) to identify it to make sure all items are unique (and the actual {id->instance}
+        is added to a dict which is only valid while the thread is suspended and later cleared when
+        the related thread resumes execution).
+
+        see: SuspendedFramesManager
+
         :param VariablesRequest request:
         '''
         arguments = request.arguments  # : :type arguments: VariablesArguments

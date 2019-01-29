@@ -91,7 +91,7 @@ class NetCommandFactory:
         """
         Returns thread stack as XML.
 
-        :param be_suspended: If True and the thread is not suspended, returns None.
+        :param must_be_suspended: If True and the thread is not suspended, returns None.
         """
         try:
             # If frame is None, the return is an empty frame list.
@@ -152,6 +152,34 @@ class NetCommandFactory:
         except:
             return self.make_error_message(0, get_exception_traceback_str())
 
+    def _iter_visible_frames_info(self, py_db, frame, frame_id_to_lineno):
+        while frame is not None:
+            if frame.f_code is None:
+                continue  # Iron Python sometimes does not have it!
+
+            method_name = frame.f_code.co_name  # method name (if in method) or ? if global
+            if method_name is None:
+                continue  # Iron Python sometimes does not have it!
+
+            abs_path_real_path_and_base = get_abs_path_real_path_and_base_from_frame(frame)
+            if py_db.get_file_type(abs_path_real_path_and_base) == py_db.PYDEV_FILE:
+                # Skip pydevd files.
+                frame = frame.f_back
+                continue
+
+            filename_in_utf8 = pydevd_file_utils.norm_file_to_client(abs_path_real_path_and_base[0])
+            if not filesystem_encoding_is_utf8 and hasattr(filename_in_utf8, "decode"):
+                # filename_in_utf8 is a byte string encoded using the file system encoding
+                # convert it to utf8
+                filename_in_utf8 = filename_in_utf8.decode(file_system_encoding).encode("utf-8")
+
+            frame_id = id(frame)
+            lineno = frame_id_to_lineno.get(frame_id, frame.f_lineno)
+
+            yield frame_id, method_name, filename_in_utf8, lineno
+
+            frame = frame.f_back
+
     def make_thread_stack_str(self, frame, frame_id_to_lineno=None):
         '''
         :param frame_id_to_lineno:
@@ -169,38 +197,17 @@ class NetCommandFactory:
         frame = None  # Clear frame reference
         try:
             py_db = get_global_debugger()
-            while curr_frame:
-                frame_id = id(curr_frame)
-
-                if curr_frame.f_code is None:
-                    break  # Iron Python sometimes does not have it!
-
-                method_name = curr_frame.f_code.co_name  # method name (if in method) or ? if global
-                if method_name is None:
-                    break  # Iron Python sometimes does not have it!
-
-                abs_path_real_path_and_base = get_abs_path_real_path_and_base_from_frame(curr_frame)
-                if py_db.get_file_type(abs_path_real_path_and_base) == py_db.PYDEV_FILE:
-                    # Skip pydevd files.
-                    curr_frame = curr_frame.f_back
-                    continue
-
-                filename_in_utf8 = pydevd_file_utils.norm_file_to_client(abs_path_real_path_and_base[0])
-                if not filesystem_encoding_is_utf8 and hasattr(filename_in_utf8, "decode"):
-                    # filename_in_utf8 is a byte string encoded using the file system encoding
-                    # convert it to utf8
-                    filename_in_utf8 = filename_in_utf8.decode(file_system_encoding).encode("utf-8")
+            for frame_id, method_name, filename_in_utf8, lineno in self._iter_visible_frames_info(
+                    py_db, curr_frame, frame_id_to_lineno
+                ):
 
                 # print("file is ", filename_in_utf8)
-
-                lineno = frame_id_to_lineno.get(frame_id, curr_frame.f_lineno)
                 # print("line is ", lineno)
 
                 # Note: variables are all gotten 'on-demand'.
                 append('<frame id="%s" name="%s" ' % (frame_id , make_valid_xml_value(method_name)))
                 append('file="%s" line="%s">' % (quote(make_valid_xml_value(filename_in_utf8), '/>_= \t'), lineno))
                 append("</frame>")
-                curr_frame = curr_frame.f_back
         except:
             traceback.print_exc()
 

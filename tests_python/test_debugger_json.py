@@ -300,7 +300,7 @@ def test_case_completions_json(case_setup):
         writer.finished_ok = True
 
 
-def test_variables(case_setup):
+def test_stack_and_variables(case_setup):
 
     with case_setup.test_file('_debugger_case_local_variables.py') as writer:
         json_facade = JsonFacade(writer)
@@ -311,11 +311,22 @@ def test_variables(case_setup):
         json_facade.write_make_initial_run()
 
         hit = writer.wait_for_breakpoint_hit()
-        thread_id = hit.thread_id
-        frame_id = hit.frame_id
+
+        stack_trace_request = json_facade.write_request(
+            pydevd_schema.StackTraceRequest(pydevd_schema.StackTraceArguments(threadId=hit.thread_id)))
+
+        # : :type stack_trace_response: StackTraceResponse
+        # : :type stack_trace_response_body: StackTraceResponseBody
+        # : :type stack_frame: StackFrame
+        stack_trace_response = json_facade.wait_for_response(stack_trace_request)
+        stack_trace_response_body = stack_trace_response.body
+        assert len(stack_trace_response_body.stackFrames) == 2
+        stack_frame = next(iter(stack_trace_response_body.stackFrames))
+        assert stack_frame['name'] == 'Call'
+        assert stack_frame['source']['path'].endswith('_debugger_case_local_variables.py')
 
         scopes_request = json_facade.write_request(pydevd_schema.ScopesRequest(
-            pydevd_schema.ScopesArguments(frame_id)))
+            pydevd_schema.ScopesArguments(stack_frame['id'])))
 
         scopes_response = json_facade.wait_for_response(scopes_request)
         scopes = scopes_response.body.scopes
@@ -330,9 +341,7 @@ def test_variables(case_setup):
             pydevd_schema.VariablesRequest(pydevd_schema.VariablesArguments(variables_reference)))
         variables_response = json_facade.wait_for_response(variables_request)
 
-        print(variables_response.to_dict())
-
-        writer.write_run_thread(thread_id)
+        writer.write_run_thread(hit.thread_id)
 
         writer.finished_ok = True
 

@@ -73,3 +73,38 @@ class NetCommandFactoryJson(NetCommandFactory):
             request_seq=seq, success=True, command='completions', body=body)
         return NetCommand(CMD_RETURN, 0, response.to_dict(), is_json=True)
 
+    @overrides(NetCommandFactory.make_get_thread_stack_message)
+    def make_get_thread_stack_message(self, py_db, seq, thread_id, topmost_frame, must_be_suspended=False):
+
+        frames = []
+        if topmost_frame is not None:
+            frame_id_to_lineno = {}
+            try:
+                # : :type suspended_frames_manager: SuspendedFramesManager
+                suspended_frames_manager = py_db.suspended_frames_manager
+                info = suspended_frames_manager.get_topmost_frame_and_frame_id_to_line(thread_id)
+                if info is None:
+                    # Could not find stack of suspended frame...
+                    if must_be_suspended:
+                        return None
+                else:
+                    # Note: we have to use the topmost frame where it was suspended (it may
+                    # be different if it was an exception).
+                    topmost_frame, frame_id_to_lineno = info
+
+                for frame_id, method_name, filename_in_utf8, lineno in self._iter_visible_frames_info(
+                        py_db, topmost_frame, frame_id_to_lineno
+                    ):
+                    # TODO: provide sourceReference.
+                    # TODO: presentationHint should be subtle if it's a filtered method.
+                    frames.append(pydevd_schema.StackFrame(
+                        frame_id, method_name, lineno, column=1, source={'path': filename_in_utf8}).to_dict())
+            finally:
+                topmost_frame = None
+
+        response = pydevd_schema.StackTraceResponse(
+            request_seq=seq,
+            success=True,
+            command='stackTrace',
+            body=pydevd_schema.StackTraceResponseBody(stackFrames=frames, totalFrames=len(frames)))
+        return NetCommand(CMD_RETURN, 0, response.to_dict(), is_json=True)
